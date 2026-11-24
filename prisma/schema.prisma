@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+  AUTHOR
+  CONTRIBUTOR
+  SUBSCRIBER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  SCHEDULED
+  PRIVATE
+  TRASH
+}
+
+enum CommentStatus {
+  APPROVED
+  PENDING
+  SPAM
+  TRASH
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  username     String     @unique
+  passwordHash String
+  displayName  String
+  firstName    String?
+  lastName     String?
+  bio          String?    @db.Text
+  website      String?
+  avatarUrl    String?
+  role         Role       @default(AUTHOR)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  posts     Post[]     @relation("PostAuthor")
+  revisions PostRevision[]
+  comments  Comment[]
+  auditLogs AuditLog[]
+
+  @@index([role])
+}
+
+model Post {
+  id              String     @id @default(cuid())
+  title           String
+  slug            String     @unique
+  subtitle        String?
+  excerpt         String?    @db.Text
+  content         Json       // Tiptap JSON document
+  contentHtml     String     @db.Text
+  status          PostStatus @default(DRAFT)
+  visibility      String     @default("public")
+  featuredImage   String?
+  publishedAt     DateTime?
+  scheduledAt     DateTime?
+  viewCount       Int        @default(0)
+  readingTime     Int        @default(1)
+  seoTitle        String?
+  seoDescription  String?
+  focusKeyword    String?
+  canonicalUrl    String?
+  robotsIndex     Boolean    @default(true)
+  robotsFollow    Boolean    @default(true)
+  ogImage         String?
+  allowComments   Boolean    @default(true)
+  authorId        String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  author    User           @relation("PostAuthor", fields: [authorId], references: [id])
+  categories PostCategory[]
+  tags      PostTag[]
+  revisions PostRevision[]
+  comments  Comment[]
+
+  @@index([status, publishedAt])
+  @@index([authorId])
+  @@index([deletedAt])
+}
+
+model PostRevision {
+  id            String   @id @default(cuid())
+  postId        String
+  revisionNo    Int
+  title         String
+  content       Json
+  contentHtml   String   @db.Text
+  excerpt       String?  @db.Text
+  changeSummary String?
+  updatedById   String
+  createdAt     DateTime @default(now())
+
+  post      Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  updatedBy User @relation(fields: [updatedById], references: [id])
+
+  @@unique([postId, revisionNo])
+}
+
+model Category {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  description    String?  @db.Text
+  image          String?
+  seoTitle       String?
+  seoDescription String?
+  parentId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  posts    PostCategory[]
+
+  @@index([parentId])
+}
+
+model PostCategory {
+  postId     String
+  categoryId String
+
+  post     Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([postId, categoryId])
+  @@index([categoryId])
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts PostTag[]
+}
+
+model PostTag {
+  postId String
+  tagId  String
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model Comment {
+  id          String        @id @default(cuid())
+  postId      String
+  parentId    String?
+  content     String        @db.Text
+  status      CommentStatus @default(PENDING)
+  authorName  String
+  authorEmail String
+  userId      String?
+  ipAddress   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  post    Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[] @relation("CommentThread")
+  user    User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([postId, status])
+  @@index([status, createdAt])
+}
+
+model Media {
+  id          String   @id @default(cuid())
+  fileName    String
+  url         String
+  mimeType    String
+  size        Int
+  width       Int?
+  height      Int?
+  altText     String?
+  title       String?
+  caption     String?
+  description String?  @db.Text
+  uploadedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([mimeType])
+  @@index([createdAt])
+}
+
+model SiteSettings {
+  id          String   @id @default("site")
+  siteTitle   String   @default("BlogMaster CMS")
+  tagline     String   @default("Manage Your Content. Grow Your Audience.")
+  siteUrl     String   @default("http://localhost:3000")
+  adminEmail  String   @default("admin@blogmaster.local")
+  language    String   @default("en")
+  timezone    String   @default("UTC")
+  postsPerPage Int     @default(9)
+  primaryColor String  @default("#2563eb")
+  themeName   String   @default("Modern Blog")
+  allowComments Boolean @default(true)
+  requireCommentApproval Boolean @default(true)
+  defaultSeoTitle       String?
+  defaultSeoDescription String?
+  updatedAt   DateTime @updatedAt
+}
+
+model NewsletterSubscriber {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  status       String    @default("pending")
+  confirmedAt  DateTime?
+  unsubscribedAt DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model ContactSubmission {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Redirect {
+  id        String   @id @default(cuid())
+  fromPath  String   @unique
+  toPath    String
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  details      String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([resourceType, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  message   String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([readAt, createdAt])
+}
+
+model PostView {
+  id        String   @id @default(cuid())
+  postId    String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+}
